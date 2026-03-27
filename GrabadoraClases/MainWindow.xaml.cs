@@ -305,7 +305,8 @@ public partial class MainWindow : Window
             var tempWav = PreprocessSamplesToTempWav(samples);
             try
             {
-                var builder = factory.CreateBuilder().WithLanguage("auto");
+                // Use fixed language (avoids wrong detection on short chunks)
+                var builder = factory.CreateBuilder().WithLanguage(_settings.RecordingLanguage);
 
                 // Pass last ~150 chars of previous text as context for continuity
                 var context = string.IsNullOrEmpty(_prevContext)

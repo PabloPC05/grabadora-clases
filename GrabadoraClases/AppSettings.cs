@@ -7,7 +7,8 @@ namespace GrabadoraClases;
 public class AppSettings
 {
     public string ApiKey { get; set; } = string.Empty;
-    public string WhisperModel { get; set; } = "small";
+    public string WhisperModel { get; set; } = "tiny";
+    public string RecordingLanguage { get; set; } = "es"; // idioma fijo para grabación en tiempo real
     public string OutputDir { get; set; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "grabaciones");
     public string InitialPrompt { get; set; } = "Clase universitaria, terminología académica y técnica.";

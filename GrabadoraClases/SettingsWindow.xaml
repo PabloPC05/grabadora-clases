@@ -50,14 +50,33 @@
                           Foreground="{StaticResource TextBrush}"
                           BorderBrush="{StaticResource BorderBrush}"
                           FontSize="13" Padding="8,6">
-                    <ComboBoxItem Tag="tiny">tiny  — muy rápido, menor precisión (~75MB)</ComboBoxItem>
-                    <ComboBoxItem Tag="base">base  — rápido, buena precisión (~150MB)</ComboBoxItem>
-                    <ComboBoxItem Tag="small">small — equilibrado, recomendado (~170MB)</ComboBoxItem>
-                    <ComboBoxItem Tag="medium">medium — alta precisión, más lento (~500MB)</ComboBoxItem>
+                    <ComboBoxItem Tag="tiny">tiny   — tiempo real, rápido (~75MB) ★ recomendado</ComboBoxItem>
+                    <ComboBoxItem Tag="base">base   — equilibrado, buena precisión (~150MB)</ComboBoxItem>
+                    <ComboBoxItem Tag="small">small  — alta precisión, lento para tiempo real (~170MB)</ComboBoxItem>
+                    <ComboBoxItem Tag="medium">medium — máxima precisión, muy lento (~500MB)</ComboBoxItem>
                 </ComboBox>
                 <TextBlock x:Name="ModelsPathLabel" FontSize="11"
-                           Foreground="{StaticResource SubtextBrush}" Margin="0,0,0,16"
+                           Foreground="{StaticResource SubtextBrush}" Margin="0,0,0,8"
                            TextWrapping="Wrap"/>
+
+                <!-- Recording language -->
+                <TextBlock Text="Idioma de grabación" FontSize="13" FontWeight="SemiBold"
+                           Foreground="{StaticResource SubtextBrush}" Margin="0,0,0,6"/>
+                <ComboBox x:Name="LangCombo" Margin="0,0,0,4"
+                          Background="{StaticResource Surface2Brush}"
+                          Foreground="{StaticResource TextBrush}"
+                          BorderBrush="{StaticResource BorderBrush}"
+                          FontSize="13" Padding="8,6">
+                    <ComboBoxItem Tag="es">Español</ComboBoxItem>
+                    <ComboBoxItem Tag="en">Inglés</ComboBoxItem>
+                    <ComboBoxItem Tag="fr">Francés</ComboBoxItem>
+                    <ComboBoxItem Tag="de">Alemán</ComboBoxItem>
+                    <ComboBoxItem Tag="it">Italiano</ComboBoxItem>
+                    <ComboBoxItem Tag="pt">Portugués</ComboBoxItem>
+                    <ComboBoxItem Tag="auto">Auto-detectar (menos preciso en tiempo real)</ComboBoxItem>
+                </ComboBox>
+                <TextBlock Text="Fijar el idioma evita detecciones erróneas en fragmentos cortos."
+                           FontSize="11" Foreground="{StaticResource SubtextBrush}" Margin="0,0,0,16"/>
 
                 <!-- Output dir -->
                 <TextBlock Text="Carpeta de salida" FontSize="13" FontWeight="SemiBold"

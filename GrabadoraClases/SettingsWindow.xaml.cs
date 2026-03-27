@@ -33,7 +33,18 @@ public partial class SettingsWindow : Window
                 break;
             }
         }
-        if (ModelCombo.SelectedIndex < 0) ModelCombo.SelectedIndex = 2; // small default
+        if (ModelCombo.SelectedIndex < 0) ModelCombo.SelectedIndex = 0; // tiny default
+
+        // Select language combo
+        foreach (ComboBoxItem item in LangCombo.Items)
+        {
+            if (item.Tag?.ToString() == Settings.RecordingLanguage)
+            {
+                LangCombo.SelectedItem = item;
+                break;
+            }
+        }
+        if (LangCombo.SelectedIndex < 0) LangCombo.SelectedIndex = 0; // español default
 
         ModelsPathLabel.Text = $"Modelos guardados en: {MainWindow.ModelsDir}";
     }
@@ -69,12 +80,14 @@ public partial class SettingsWindow : Window
 
     private void SaveButton_Click(object sender, RoutedEventArgs e)
     {
-        var selectedModel = (ModelCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "small";
+        var selectedModel = (ModelCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "tiny";
+        var selectedLang = (LangCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "es";
 
         Settings = new AppSettings
         {
             ApiKey = _apiKeyValue,
             WhisperModel = selectedModel,
+            RecordingLanguage = selectedLang,
             OutputDir = OutputDirBox.Text.Trim(),
             InitialPrompt = PromptBox.Text.Trim(),
             GainDb = (float)GainSlider.Value,
