@@ -39,8 +39,8 @@ public partial class MainWindow : Window
 
     private static readonly HttpClient _http = new();
 
-    // Seconds of audio per real-time chunk (longer = better accuracy but more delay)
-    private const int ChunkSeconds = 15;
+    // Seconds of audio per real-time chunk
+    private const int ChunkSeconds = 5;
 
     // ── Language map ──────────────────────────────────────────────────────────
     private static readonly Dictionary<string, string> LangNames = new()
@@ -130,7 +130,7 @@ public partial class MainWindow : Window
 
         // Chunk timer: every ChunkSeconds extract buffer and queue for transcription
         _chunkTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(ChunkSeconds) };
-        _chunkTimer.Tick += async (s, ev) => await ExtractAndQueueChunkAsync(isLast: false);
+        _chunkTimer.Tick += (s, ev) => ExtractAndQueueChunk(isLast: false);
         _chunkTimer.Start();
 
         // Clock timer for elapsed time display
@@ -155,10 +155,10 @@ public partial class MainWindow : Window
 
     private void OnAudioData(object? sender, WaveInEventArgs e)
     {
-        // Save to WAV file
+        if (!_isRecording) return; // guard against late callbacks after stop
+
         _waveWriter?.Write(e.Buffer, 0, e.BytesRecorded);
 
-        // Accumulate in buffer for real-time processing
         lock (_bufferLock)
         {
             for (int i = 0; i < e.BytesRecorded - 1; i += 2)
@@ -166,109 +166,119 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task ExtractAndQueueChunkAsync(bool isLast)
+    private void ExtractAndQueueChunk(bool isLast)
     {
         short[] chunk;
         lock (_bufferLock)
         {
-            if (_recordBuffer.Count < 16000) return; // skip if < 1 second of audio
+            if (_recordBuffer.Count < 8000 && !isLast) return; // skip very short non-final chunks
+            if (_recordBuffer.Count == 0) return;
             chunk = _recordBuffer.ToArray();
             _recordBuffer.Clear();
         }
 
-        if (_chunkChannel != null)
-            await _chunkChannel.Writer.WriteAsync((chunk, isLast));
+        // TryWrite is non-blocking; drop the chunk if the channel is full (processor is behind)
+        _chunkChannel?.Writer.TryWrite((chunk, isLast));
     }
 
     private async void StopButton_Click(object sender, RoutedEventArgs e)
     {
         if (!_isRecording) return;
 
+        // Disable controls immediately to prevent double-click
+        _isRecording = false;
+        StopButton.IsEnabled = false;
         _chunkTimer?.Stop();
         _clockTimer?.Stop();
-        _isRecording = false;
-
-        StopButton.IsEnabled = false;
         TimeText.Text = "";
 
-        // Stop hardware
-        _waveIn?.StopRecording();
-        _waveIn?.Dispose();
+        // Stop hardware (set null before dispose to guard OnAudioData)
+        var waveIn = _waveIn;
+        var waveWriter = _waveWriter;
         _waveIn = null;
-        _waveWriter?.Flush();
-        _waveWriter?.Dispose();
         _waveWriter = null;
+        waveIn?.StopRecording();
+        waveIn?.Dispose();
+        waveWriter?.Flush();
+        waveWriter?.Dispose();
 
-        // Flush remaining buffer as last chunk, then close channel
-        await ExtractAndQueueChunkAsync(isLast: true);
+        // Flush remaining buffer and close channel
+        ExtractAndQueueChunk(isLast: true);
         _chunkChannel?.Writer.TryComplete();
 
-        // Wait for all transcription chunks to finish
         SetStatus("Finalizando transcripción...", "#F9E2AF");
         ShowOverlay("Finalizando transcripción...", "Procesando últimos fragmentos de audio");
 
-        var (fullText, language) = await (_rtTask ?? Task.FromResult(("", "es")));
+        try
+        {
+            var (fullText, language) = await (_rtTask ?? Task.FromResult(("", "es")));
 
-        if (string.IsNullOrWhiteSpace(fullText))
+            if (string.IsNullOrWhiteSpace(fullText))
+            {
+                HideOverlay();
+                SetStatus("No se detectó audio transcribible.", "#F9E2AF");
+                RecordButton.IsEnabled = true;
+                OpenFileButton.IsEnabled = true;
+                return;
+            }
+
+            var langName = LangNames.GetValueOrDefault(language, language);
+
+            string? translation = null;
+            string textForSummary = fullText;
+
+            if (language != "es" && _settings.AutoTranslate && !string.IsNullOrEmpty(_settings.ApiKey))
+            {
+                SetOverlay("Traduciendo...", $"Del {langName} al español");
+                translation = await TranslateAsync(fullText, langName, CancellationToken.None);
+                if (translation != null) textForSummary = translation;
+            }
+
+            string summary;
+            if (!string.IsNullOrEmpty(_settings.ApiKey))
+            {
+                SetOverlay("Generando resumen...", "Claude IA está resumiendo la clase");
+                summary = await SummarizeAsync(textForSummary, CancellationToken.None);
+            }
+            else
+            {
+                summary = "[Resumen no disponible: configura ANTHROPIC_API_KEY en ⚙ Configuración]";
+            }
+
+            var mdPath = SaveMarkdown(_currentRecordingPath!, fullText, summary, language, langName, translation);
+
+            SummaryText.Text = summary;
+            TranscriptionText.Text = translation ?? fullText;
+
+            if (translation != null)
+            {
+                OriginalTab.Visibility = Visibility.Visible;
+                OriginalText.Text = fullText;
+            }
+
+            var fi = new FileInfo(_currentRecordingPath!);
+            InfoFileName.Text = $"📄 {fi.Name}";
+            InfoLanguage.Text = $"🌐 {langName} ({language})";
+            InfoDuration.Text = $"⏱ {_recordSeconds / 60}:{_recordSeconds % 60:D2}";
+            InfoBar.Visibility = Visibility.Visible;
+
+            ResultTabs.SelectedIndex = 0;
+            HideOverlay();
+            SetStatus($"✓ Guardado: {Path.GetFileName(mdPath)}", "#A6E3A1");
+            LoadHistory();
+        }
+        catch (Exception ex)
         {
             HideOverlay();
-            SetStatus("No se detectó audio transcribible.", "#F9E2AF");
+            SetStatus($"Error al finalizar: {ex.Message}", "#F38BA8");
+            MessageBox.Show($"Error al finalizar la grabación:\n\n{ex.Message}", "Error",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
             RecordButton.IsEnabled = true;
             OpenFileButton.IsEnabled = true;
-            return;
         }
-
-        var langName = LangNames.GetValueOrDefault(language, language);
-
-        // Translate if needed
-        string? translation = null;
-        string textForSummary = fullText;
-
-        if (language != "es" && _settings.AutoTranslate && !string.IsNullOrEmpty(_settings.ApiKey))
-        {
-            SetOverlay("Traduciendo...", $"Del {langName} al español");
-            translation = await TranslateAsync(fullText, langName, CancellationToken.None);
-            if (translation != null) textForSummary = translation;
-        }
-
-        // Summarize
-        string summary;
-        if (!string.IsNullOrEmpty(_settings.ApiKey))
-        {
-            SetOverlay("Generando resumen...", "Claude IA está resumiendo la clase");
-            summary = await SummarizeAsync(textForSummary, CancellationToken.None);
-        }
-        else
-        {
-            summary = "[Resumen no disponible: configura ANTHROPIC_API_KEY en ⚙ Configuración]";
-        }
-
-        // Save markdown
-        var mdPath = SaveMarkdown(_currentRecordingPath!, fullText, summary, language, langName, translation);
-
-        // Update UI
-        SummaryText.Text = summary;
-        TranscriptionText.Text = translation ?? fullText;
-
-        if (translation != null)
-        {
-            OriginalTab.Visibility = Visibility.Visible;
-            OriginalText.Text = fullText;
-        }
-
-        var fi = new FileInfo(_currentRecordingPath!);
-        InfoFileName.Text = $"📄 {fi.Name}";
-        InfoLanguage.Text = $"🌐 {langName} ({language})";
-        var secs = _recordSeconds;
-        InfoDuration.Text = $"⏱ {secs / 60}:{secs % 60:D2}";
-        InfoBar.Visibility = Visibility.Visible;
-
-        ResultTabs.SelectedIndex = 0;
-        HideOverlay();
-        SetStatus($"✓ Guardado: {Path.GetFileName(mdPath)}", "#A6E3A1");
-        RecordButton.IsEnabled = true;
-        OpenFileButton.IsEnabled = true;
-        LoadHistory();
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
