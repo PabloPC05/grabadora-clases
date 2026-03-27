@@ -11,6 +11,7 @@ path = "src/main.rs"
 eframe = { version = "0.28", features = ["default"] }
 egui = "0.28"
 cpal = "0.15"
+whisper-rs = "0.11"
 symphonia = { version = "0.5", features = ["mp3", "aac", "flac", "ogg", "isomp4"] }
 hound = "3.5"
 reqwest = { version = "0.12", features = ["blocking", "json", "native-tls"] }
