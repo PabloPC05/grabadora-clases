@@ -158,6 +158,15 @@
                         </Style>
                     </TabControl.Resources>
 
+                    <!-- Transcription tab (primary) -->
+                    <TabItem Header="📝 Transcripción">
+                        <TextBox x:Name="TranscriptionText" Style="{StaticResource DarkTextBox}"
+                                 IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"
+                                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                 BorderThickness="0" Padding="16" Background="{StaticResource BackgroundBrush}"
+                                 Text="Aquí aparecerá la transcripción en tiempo real..."/>
+                    </TabItem>
+
                     <!-- Summary tab -->
                     <TabItem Header="📋 Resumen">
                         <Grid Background="{StaticResource BackgroundBrush}">
@@ -168,17 +177,8 @@
                                      IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"
                                      VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                                      BorderThickness="0" Padding="16" Background="{StaticResource BackgroundBrush}"
-                                     Text="Aquí aparecerá el resumen de la clase..."/>
+                                     Text="El resumen aparecerá al detener la grabación..."/>
                         </Grid>
-                    </TabItem>
-
-                    <!-- Transcription tab -->
-                    <TabItem Header="📝 Transcripción">
-                        <TextBox x:Name="TranscriptionText" Style="{StaticResource DarkTextBox}"
-                                 IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"
-                                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                                 BorderThickness="0" Padding="16" Background="{StaticResource BackgroundBrush}"
-                                 Text="Aquí aparecerá la transcripción (en español)..."/>
                     </TabItem>
 
                     <!-- Original tab (only visible when translated) -->

@@ -14,4 +14,12 @@
     <PackageReference Include="Whisper.net.Runtime" Version="1.7.4" />
   </ItemGroup>
 
+  <!-- Copy native Whisper DLLs to output directory on publish -->
+  <ItemGroup>
+    <NativeWhisperDlls Include="$(NuGetPackageRoot)whisper.net.runtime\1.7.4\build\win-x64\*.dll"/>
+  </ItemGroup>
+  <Target Name="CopyWhisperNativeLibs" AfterTargets="Publish">
+    <Copy SourceFiles="@(NativeWhisperDlls)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true"/>
+  </Target>
+
 </Project>
