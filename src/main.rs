@@ -56,15 +56,21 @@ struct Settings {
     whisper_model: String,
     output_dir: String,
     python_cmd: String,
+    /// Pista de contexto para Whisper (asignatura, tema…). Mejora mucho la precisión.
+    initial_prompt: String,
+    /// Ganancia extra en dB para grabar desde lejos (0 = sin cambio, 12 = recomendado en aula)
+    gain_db: f32,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
             api_key: std::env::var("ANTHROPIC_API_KEY").unwrap_or_default(),
-            whisper_model: "small".into(),
+            whisper_model: "medium".into(),
             output_dir: "grabaciones".into(),
             python_cmd: "python".into(),
+            initial_prompt: String::new(),
+            gain_db: 12.0,
         }
     }
 }
@@ -153,6 +159,8 @@ impl GrabadoraApp {
         let model = self.settings.whisper_model.clone();
         let api_key = self.settings.api_key.clone();
         let python = self.settings.python_cmd.clone();
+        let gain_db = self.settings.gain_db;
+        let prompt = self.initial_prompt();
 
         self.stop_tx = Some(stop_tx);
         self.state = AppState::Recording;
@@ -164,11 +172,12 @@ impl GrabadoraApp {
                     let ts = Local::now().format("%Y%m%d_%H%M%S").to_string();
                     let wav = format!("{}/clase_{}.wav", output_dir, ts);
                     msg_tx.send(WorkerMsg::Status("Guardando audio...".into())).ok();
-                    if let Err(e) = save_wav(&wav, &samples) {
+                    let processed = apply_gain(&samples, gain_db);
+                    if let Err(e) = save_wav(&wav, &processed) {
                         msg_tx.send(WorkerMsg::Error(format!("Error guardando WAV: {e}"))).ok();
                         return;
                     }
-                    process_audio(wav, model, python, api_key, msg_tx);
+                    process_audio_with_prompt(wav, model, python, api_key, prompt, msg_tx);
                 }
                 Err(e) => {
                     msg_tx.send(WorkerMsg::Error(format!("Error grabando: {e}"))).ok();
@@ -201,6 +210,15 @@ impl GrabadoraApp {
             thread::spawn(move || {
                 process_audio(path_str, model, python, api_key, msg_tx);
             });
+        }
+    }
+
+    fn initial_prompt(&self) -> String {
+        let base = "Transcripción de una clase universitaria.";
+        if self.settings.initial_prompt.is_empty() {
+            base.to_string()
+        } else {
+            format!("{} {}", base, self.settings.initial_prompt)
         }
     }
 
@@ -262,6 +280,22 @@ impl eframe::App for GrabadoraApp {
                                         ui.selectable_value(&mut self.settings.whisper_model, m.to_string(), *m);
                                     }
                                 });
+                            ui.end_row();
+
+                            ui.label("Asignatura / contexto:")
+                                .on_hover_text("Pista para Whisper: mejora precisión de términos técnicos");
+                            ui.add(egui::TextEdit::singleline(&mut self.settings.initial_prompt)
+                                .hint_text("ej: Topología, Ecuaciones Diferenciales, Ciberseguridad…")
+                                .desired_width(300.0));
+                            ui.end_row();
+
+                            ui.label("Amplificación (dB):")
+                                .on_hover_text("Sube el volumen del micro. 12 dB recomendado para clase.");
+                            ui.horizontal(|ui: &mut egui::Ui| {
+                                ui.add(egui::Slider::new(&mut self.settings.gain_db, 0.0..=24.0)
+                                    .suffix(" dB")
+                                    .fixed_decimals(0));
+                            });
                             ui.end_row();
 
                             ui.label("Comando Python:");
@@ -586,6 +620,23 @@ fn resample(input: &[f32], from: u32, to: u32) -> Vec<f32> {
     out
 }
 
+/// Aplica ganancia en dB y luego normaliza para evitar clipping.
+fn apply_gain(samples: &[f32], gain_db: f32) -> Vec<f32> {
+    if gain_db <= 0.0 {
+        return samples.to_vec();
+    }
+    let linear = 10f32.powf(gain_db / 20.0);
+    let boosted: Vec<f32> = samples.iter().map(|&s| s * linear).collect();
+    // Si hay clipping, normalizar para quedar al 95 %
+    let peak = boosted.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+    if peak > 0.95 {
+        let scale = 0.95 / peak;
+        boosted.iter().map(|&s| s * scale).collect()
+    } else {
+        boosted
+    }
+}
+
 fn save_wav(path: &str, samples: &[f32]) -> Result<()> {
     let spec = hound::WavSpec {
         channels: 1,
@@ -610,9 +661,20 @@ fn process_audio(
     api_key: String,
     tx: Sender<WorkerMsg>,
 ) {
+    process_audio_with_prompt(audio_path, model, python_cmd, api_key, String::new(), tx)
+}
+
+fn process_audio_with_prompt(
+    audio_path: String,
+    model: String,
+    python_cmd: String,
+    api_key: String,
+    initial_prompt: String,
+    tx: Sender<WorkerMsg>,
+) {
     tx.send(WorkerMsg::Status("Transcribiendo con Whisper...".into())).ok();
 
-    let (transcript, lang_code) = match transcribe_with_python(&audio_path, &model, &python_cmd) {
+    let (transcript, lang_code) = match transcribe_with_python(&audio_path, &model, &python_cmd, &initial_prompt) {
         Ok(r) => r,
         Err(e) => {
             tx.send(WorkerMsg::Error(format!("Error en transcripción: {e}"))).ok();
@@ -716,22 +778,66 @@ fn transcribe_with_python(
     audio_path: &str,
     model: &str,
     python_cmd: &str,
+    initial_prompt: &str,
 ) -> Result<(String, String)> {
-    // Escapar la ruta para Python (barras dobles en Windows)
     let path_escaped = audio_path.replace('\\', "\\\\");
+    let prompt_escaped = initial_prompt.replace('"', "\\\"");
     let script = format!(
         r#"
-import whisper, json, sys
+import whisper, json, sys, numpy as np
+
+def preprocess(audio, sr=16000):
+    """Reducción de ruido espectral + normalización de ganancia."""
+    # 1. Intentar noisereduce si está instalado
+    try:
+        import noisereduce as nr
+        # Primer segundo como muestra de ruido de fondo del aula
+        noise_len = min(int(sr * 1.5), len(audio) // 4)
+        noise_sample = audio[:noise_len]
+        audio = nr.reduce_noise(y=audio, sr=sr, y_noise=noise_sample,
+                                prop_decrease=0.75, stationary=False)
+    except ImportError:
+        pass  # sin noisereduce, continuar
+
+    # 2. Normalización RMS: subir volumen de audio lejano
+    rms = np.sqrt(np.mean(audio ** 2))
+    if rms > 1e-6:
+        target_rms = 0.08          # nivel objetivo
+        gain = min(target_rms / rms, 6.0)   # máximo 6x (~15 dB)
+        audio = audio * gain
+
+    # 3. Limitar para evitar clipping
+    audio = np.clip(audio, -1.0, 1.0)
+    return audio
+
 try:
-    model = whisper.load_model("{model}")
-    result = model.transcribe("{path}", temperature=0, beam_size=5, best_of=5, condition_on_previous_text=True)
+    import whisper as _w
+    model = _w.load_model("{model}")
+
+    # Cargar audio con whisper (maneja todos los formatos via ffmpeg)
+    audio = _w.load_audio("{path}")
+    audio = preprocess(audio)
+
+    result = model.transcribe(
+        audio,
+        initial_prompt="{prompt}",
+        temperature=0,
+        beam_size=5,
+        best_of=5,
+        condition_on_previous_text=True,
+        no_speech_threshold=0.4,
+        compression_ratio_threshold=2.4,
+        word_timestamps=False,
+    )
     print(json.dumps({{"text": result["text"].strip(), "language": result["language"]}}))
 except Exception as e:
-    print(json.dumps({{"error": str(e)}}), file=sys.stderr)
+    import traceback
+    print(traceback.format_exc(), file=sys.stderr)
     sys.exit(1)
 "#,
         model = model,
-        path = path_escaped
+        path = path_escaped,
+        prompt = prompt_escaped,
     );
 
     let output = std::process::Command::new(python_cmd)
