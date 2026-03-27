@@ -3,3 +3,9 @@ grabaciones/
 *.wav
 *.env
 .env
+.claude/
+whisper_test/
+GrabadoraClases/publish/
+GrabadoraClases/bin/
+GrabadoraClases/obj/
+*.pdb
