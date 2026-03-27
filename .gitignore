@@ -1,0 +1,5 @@
+/target
+grabaciones/
+*.wav
+*.env
+.env
