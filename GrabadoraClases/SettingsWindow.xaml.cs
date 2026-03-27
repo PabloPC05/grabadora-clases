@@ -34,6 +34,8 @@ public partial class SettingsWindow : Window
             }
         }
         if (ModelCombo.SelectedIndex < 0) ModelCombo.SelectedIndex = 2; // small default
+
+        ModelsPathLabel.Text = $"Modelos guardados en: {MainWindow.ModelsDir}";
     }
 
     private void ApiKeyBox_PasswordChanged(object sender, RoutedEventArgs e)

@@ -55,8 +55,9 @@
                     <ComboBoxItem Tag="small">small — equilibrado, recomendado (~170MB)</ComboBoxItem>
                     <ComboBoxItem Tag="medium">medium — alta precisión, más lento (~500MB)</ComboBoxItem>
                 </ComboBox>
-                <TextBlock Text="El modelo se descarga automáticamente la primera vez."
-                           FontSize="11" Foreground="{StaticResource SubtextBrush}" Margin="0,0,0,16"/>
+                <TextBlock x:Name="ModelsPathLabel" FontSize="11"
+                           Foreground="{StaticResource SubtextBrush}" Margin="0,0,0,16"
+                           TextWrapping="Wrap"/>
 
                 <!-- Output dir -->
                 <TextBlock Text="Carpeta de salida" FontSize="13" FontWeight="SemiBold"

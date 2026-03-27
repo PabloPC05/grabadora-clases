@@ -265,9 +265,14 @@ public partial class MainWindow : Window
     //  WHISPER MODEL
     // ═══════════════════════════════════════════════════════════════════════════
 
+    // Ruta fija para los modelos, independiente de donde esté el exe
+    internal static readonly string ModelsDir = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "GrabadoraClases", "models");
+
     private async Task<string> EnsureModelAsync(CancellationToken ct)
     {
-        var modelsDir = Path.Combine(AppContext.BaseDirectory, "models");
+        var modelsDir = ModelsDir;
         Directory.CreateDirectory(modelsDir);
 
         var modelName = _settings.WhisperModel switch
