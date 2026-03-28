@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "Grabadora de Clases",
+    "slug": "grabadora-clases",
+    "version": "1.0.0",
+    "scheme": "grabadora-clases",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-av",
+        {
+          "microphonePermission": "La app necesita acceso al micrófono para grabar las clases."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.grabadoraclases.app"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.grabadoraclases.app"
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}
