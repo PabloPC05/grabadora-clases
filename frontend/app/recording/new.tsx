@@ -7,6 +7,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -24,12 +25,14 @@ export default function NewRecordingScreen() {
   const [selectedSubjectId, setSelectedSubjectId] = useState<number | null>(null);
   const [topic, setTopic] = useState('');
   const [keywordsText, setKeywordsText] = useState('');
+  const [generateSummary, setGenerateSummary] = useState(false);
   const [loadingSubjects, setLoadingSubjects] = useState(true);
 
   // ── Paso 2: Grabación ───────────────────────────────────────────────────
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0); // segundos
   const [uploading, setUploading] = useState(false);
+  const [meterLevels, setMeterLevels] = useState<number[]>(Array(20).fill(0));
 
   const recordingRef = useRef<Audio.Recording | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -68,11 +71,23 @@ export default function NewRecordingScreen() {
     });
 
     const { recording } = await Audio.Recording.createAsync(
-      Audio.RecordingOptionsPresets.HIGH_QUALITY,
+      {
+        ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
+        isMeteringEnabled: true,
+      },
+      (status) => {
+        if (status.isRecording && status.metering !== undefined) {
+          // metering va de -160 (silencio) a 0 (máximo). Normalizamos a 0-1.
+          const normalized = Math.max(0, (status.metering + 60) / 60);
+          setMeterLevels((prev) => [...prev.slice(1), normalized]);
+        }
+      },
+      80, // actualizar cada 80ms
     );
     recordingRef.current = recording;
     setIsRecording(true);
     setRecordingDuration(0);
+    setMeterLevels(Array(20).fill(0));
 
     timerRef.current = setInterval(() => {
       setRecordingDuration((d) => d + 1);
@@ -99,6 +114,13 @@ export default function NewRecordingScreen() {
 
       if (!uri) throw new Error('No se pudo obtener el URI del audio.');
 
+      // Verificar que el archivo tiene contenido
+      const { File } = await import('expo-file-system/next');
+      const file = new File(uri);
+      if (!file.exists || file.size < 1000) {
+        throw new Error('El archivo de audio está vacío o es demasiado corto. Comprueba que el micrófono funciona.');
+      }
+
       const keywords = keywordsText
         .split(',')
         .map((k) => k.trim())
@@ -108,6 +130,7 @@ export default function NewRecordingScreen() {
         subject_id: selectedSubjectId ?? undefined,
         topic: topic.trim() || undefined,
         keywords,
+        generate_summary: generateSummary,
       });
 
       // Navegar a la pantalla de espera con el task_id
@@ -182,6 +205,19 @@ export default function NewRecordingScreen() {
         />
         <Text style={styles.hint}>Separa los términos con comas.</Text>
 
+        <View style={styles.summaryToggle}>
+          <View style={styles.summaryToggleText}>
+            <Text style={styles.label}>Generar resumen con IA</Text>
+            <Text style={styles.hint}>Usa Gemini para crear apuntes y preguntas de repaso a partir de la transcripción.</Text>
+          </View>
+          <Switch
+            value={generateSummary}
+            onValueChange={setGenerateSummary}
+            trackColor={{ false: '#e2e8f0', true: '#a5b4fc' }}
+            thumbColor={generateSummary ? '#6366f1' : '#94a3b8'}
+          />
+        </View>
+
         <Pressable style={styles.button} onPress={goToRecording}>
           <Text style={styles.buttonText}>Continuar →</Text>
         </Pressable>
@@ -200,17 +236,21 @@ export default function NewRecordingScreen() {
         {/* Cronómetro */}
         <Text style={styles.timer}>{formatDuration(recordingDuration)}</Text>
 
-        {/* Indicador de onda (placeholder visual) */}
-        {isRecording && (
-          <View style={styles.waveContainer}>
-            {Array.from({ length: 12 }).map((_, i) => (
-              <View
-                key={i}
-                style={[styles.waveBar, { height: 8 + Math.random() * 32 }]}
-              />
-            ))}
-          </View>
-        )}
+        {/* Visualizador de onda con metering real del micrófono */}
+        <View style={styles.waveContainer}>
+          {meterLevels.map((level, i) => (
+            <View
+              key={i}
+              style={[
+                styles.waveBar,
+                {
+                  height: isRecording ? 6 + level * 42 : 6,
+                  opacity: isRecording ? 0.5 + level * 0.5 : 0.2,
+                },
+              ]}
+            />
+          ))}
+        </View>
 
         {/* Botón principal */}
         {!uploading ? (
@@ -263,13 +303,15 @@ const styles = StyleSheet.create({
   chipSelected: { backgroundColor: '#6366f1', borderColor: '#6366f1' },
   chipText: { fontSize: 14, color: '#475569' },
   chipTextSelected: { color: '#fff', fontWeight: '600' },
-  button: { backgroundColor: '#6366f1', borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 32 },
+  summaryToggle: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 24, backgroundColor: '#fff', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#e2e8f0' },
+  summaryToggleText: { flex: 1, marginRight: 12 },
+  button: { backgroundColor: '#6366f1', borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 16 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 
   // Paso grabación
   recorderCard: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
   timer: { fontSize: 56, fontWeight: '200', color: '#1e293b', marginVertical: 24, fontVariant: ['tabular-nums'] },
-  waveContainer: { flexDirection: 'row', alignItems: 'center', height: 48, marginBottom: 24, gap: 4 },
+  waveContainer: { flexDirection: 'row', alignItems: 'center', height: 56, marginBottom: 24, gap: 3 },
   waveBar: { width: 4, backgroundColor: '#6366f1', borderRadius: 2 },
   recButton: {
     width: 88, height: 88, borderRadius: 44,

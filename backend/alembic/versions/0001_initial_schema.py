@@ -17,22 +17,17 @@ down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-# Enums compartidos entre tablas
-recording_status = sa.Enum(
+recording_status_col = sa.Enum(
     "pending", "processing", "completed", "failed",
     name="recordingstatus",
 )
-task_status = sa.Enum(
+task_status_col = sa.Enum(
     "pending", "processing", "completed", "failed",
     name="taskstatus",
 )
 
 
 def upgrade() -> None:
-    # -- Enums (PostgreSQL los crea como tipos independientes) --
-    recording_status.create(op.get_bind(), checkfirst=True)
-    task_status.create(op.get_bind(), checkfirst=True)
-
     # -- users --
     op.create_table(
         "users",
@@ -78,7 +73,7 @@ def upgrade() -> None:
         sa.Column("topic", sa.String(500), nullable=True),
         sa.Column("audio_path", sa.String(1000), nullable=False),
         sa.Column("duration_seconds", sa.Float(), nullable=True),
-        sa.Column("status", recording_status, nullable=False, server_default="pending"),
+        sa.Column("status", recording_status_col, nullable=False, server_default="pending"),
         sa.Column("raw_transcript", sa.Text(), nullable=True),
         sa.Column("language_detected", sa.String(10), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
@@ -112,7 +107,7 @@ def upgrade() -> None:
         "tasks",
         sa.Column("id", sa.String(36), primary_key=True),
         sa.Column("recording_id", sa.Integer(), sa.ForeignKey("recordings.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("status", task_status, nullable=False, server_default="pending"),
+        sa.Column("status", task_status_col, nullable=False, server_default="pending"),
         sa.Column("error_message", sa.Text(), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
@@ -128,5 +123,5 @@ def downgrade() -> None:
     op.drop_table("glossary_terms")
     op.drop_table("subjects")
     op.drop_table("users")
-    recording_status.drop(op.get_bind(), checkfirst=True)
-    task_status.drop(op.get_bind(), checkfirst=True)
+    recording_status_col.drop(op.get_bind(), checkfirst=True)
+    task_status_col.drop(op.get_bind(), checkfirst=True)

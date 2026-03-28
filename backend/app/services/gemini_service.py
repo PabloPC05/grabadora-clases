@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 genai.configure(api_key=settings.GOOGLE_API_KEY)
 
 _model = genai.GenerativeModel(
-    model_name="gemini-1.5-flash",
+    model_name="gemini-2.0-flash",
     generation_config={"response_mime_type": "application/json"},
 )
 

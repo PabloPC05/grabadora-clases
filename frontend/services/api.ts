@@ -37,6 +37,7 @@ export interface Recording {
   id: number;
   topic?: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
+  raw_transcript?: string;
   language_detected?: string;
   created_at: string;
 }
@@ -83,7 +84,8 @@ export const authApi = {
     );
   },
 
-  me: () => apiClient.get('/auth/me'),
+  me: (token?: string) =>
+    apiClient.get('/auth/me', token ? { headers: { Authorization: `Bearer ${token}` } } : undefined),
 };
 
 // ─────────────────────────────────────────────
@@ -104,17 +106,20 @@ export const subjectsApi = {
 export const recordingsApi = {
   list: () => apiClient.get<Recording[]>('/recordings'),
 
-  upload: (audioUri: string, meta: { subject_id?: number; topic?: string; keywords?: string[] }) => {
+  upload: (audioUri: string, meta: { subject_id?: number; topic?: string; keywords?: string[]; generate_summary?: boolean }) => {
     const form = new FormData();
     form.append('audio', { uri: audioUri, name: 'clase.m4a', type: 'audio/mp4' } as any);
     if (meta.subject_id) form.append('subject_id', String(meta.subject_id));
     if (meta.topic) form.append('topic', meta.topic);
     if (meta.keywords?.length) form.append('keywords', meta.keywords.join(','));
+    form.append('generate_summary', meta.generate_summary ? 'true' : 'false');
     return apiClient.post<UploadResponse>('/recordings/upload', form, {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 120_000,
     });
   },
+
+  get: (recordingId: number) => apiClient.get<Recording>(`/recordings/${recordingId}`),
 };
 
 // ─────────────────────────────────────────────

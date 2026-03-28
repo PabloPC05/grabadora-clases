@@ -31,8 +31,8 @@ export default function LoginScreen() {
     try {
       // 1. Obtener token
       const { data } = await authApi.login(email.trim(), password);
-      // 2. Obtener perfil del usuario
-      const { data: user } = await authApi.me();
+      // 2. Obtener perfil del usuario (pasamos el token explícitamente)
+      const { data: user } = await authApi.me(data.access_token);
       // 3. Guardar en Zustand + SecureStore
       await login(data.access_token, user);
       // El root layout detectará el token y redirigirá a /(tabs)

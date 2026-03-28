@@ -7,8 +7,8 @@ const POLL_INTERVAL_MS = 3000;
 
 const STEP_MESSAGES: Record<string, string> = {
   pending: 'Tarea en cola...',
-  processing: 'Transcribiendo y generando apuntes con IA...',
-  completed: '¡Apuntes listos!',
+  processing: 'Transcribiendo audio...',
+  completed: '¡Transcripción lista!',
   failed: 'Ha ocurrido un error.',
 };
 
@@ -32,12 +32,11 @@ export default function ProcessingScreen() {
 
         if (data.status === 'completed') {
           stopPolling();
-          // Pequeño delay para que el usuario vea "¡Listo!" antes de navegar
           setTimeout(() => {
             if (data.note_id) {
               router.replace(`/notes/${data.note_id}`);
             } else {
-              router.replace('/(tabs)');
+              router.replace(`/recording/${data.recording_id}`);
             }
           }, 1200);
         } else if (data.status === 'failed') {
@@ -91,7 +90,6 @@ export default function ProcessingScreen() {
 
             <View style={styles.steps}>
               <StepRow label="Transcripción (Deepgram)" done={status !== 'pending'} />
-              <StepRow label="Generación de apuntes (Gemini)" done={status === 'completed'} />
             </View>
 
             <Text style={styles.hint}>

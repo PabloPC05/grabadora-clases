@@ -34,10 +34,9 @@ export default function RegisterScreen() {
     setLoading(true);
     try {
       // Registrar y hacer login automáticamente
-      await authApi.register(email.trim(), password, fullName.trim() || undefined);
+      const { data: registeredUser } = await authApi.register(email.trim(), password, fullName.trim() || undefined);
       const { data: tokenData } = await authApi.login(email.trim(), password);
-      const { data: user } = await authApi.me();
-      await login(tokenData.access_token, user);
+      await login(tokenData.access_token, registeredUser);
     } catch (err: any) {
       const msg = err?.response?.data?.detail ?? 'No se pudo crear la cuenta.';
       Alert.alert('Error al registrarse', msg);

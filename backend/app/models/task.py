@@ -28,7 +28,7 @@ class Task(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     recording_id = Column(Integer, ForeignKey("recordings.id", ondelete="CASCADE"), nullable=False, index=True)
 
-    status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)
+    status = Column(Enum(TaskStatus, values_callable=lambda x: [e.value for e in x]), default=TaskStatus.PENDING, nullable=False, index=True)
     error_message = Column(Text, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

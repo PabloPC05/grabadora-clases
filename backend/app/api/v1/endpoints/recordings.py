@@ -18,7 +18,7 @@ router = APIRouter(prefix="/recordings", tags=["recordings"])
 ALLOWED_AUDIO_TYPES = {"audio/mpeg", "audio/ogg", "audio/opus", "audio/wav", "audio/mp4", "audio/x-m4a"}
 
 
-def _process_audio_task(recording_id: int, keywords: List[str], db_url: str):
+def _process_audio_task(recording_id: int, keywords: List[str], db_url: str, generate_summary: bool = False):
     """
     Tarea en segundo plano:
       1. Transcribir con Deepgram nova-2 (inyectando keywords del glosario)
@@ -62,22 +62,23 @@ def _process_audio_task(recording_id: int, keywords: List[str], db_url: str):
         recording.language_detected = language_detected
         db.commit()
 
-        # --- Paso 2: Post-procesado con Gemini ---
-        from app.services.gemini_service import generate_notes
-        note_data = generate_notes(
-            raw_transcript=raw_transcript,
-            subject_name=subject_name,
-            glossary_terms=glossary_terms,
-        )
+        # --- Paso 2 (opcional): Post-procesado con Gemini ---
+        if generate_summary:
+            from app.services.gemini_service import generate_notes
+            note_data = generate_notes(
+                raw_transcript=raw_transcript,
+                subject_name=subject_name,
+                glossary_terms=glossary_terms,
+            )
+            from app.models.note import Note
+            note = Note(
+                recording_id=recording_id,
+                content_markdown=note_data["content_markdown"],
+                key_concepts=note_data["key_concepts"],
+                review_questions=note_data["review_questions"],
+            )
+            db.add(note)
 
-        from app.models.note import Note
-        note = Note(
-            recording_id=recording_id,
-            content_markdown=note_data["content_markdown"],
-            key_concepts=note_data["key_concepts"],
-            review_questions=note_data["review_questions"],
-        )
-        db.add(note)
         recording.status = RecordingStatus.COMPLETED
         task.status = TaskStatus.COMPLETED
         db.commit()
@@ -103,6 +104,7 @@ async def upload_recording(
     subject_id: int | None = Form(None),
     topic: str | None = Form(None),
     keywords: str = Form(""),
+    generate_summary: bool = Form(False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -159,6 +161,7 @@ async def upload_recording(
         recording.id,
         keyword_list,
         settings.DATABASE_URL,
+        generate_summary,
     )
 
     return UploadResponse(task_id=task.id, recording_id=recording.id)

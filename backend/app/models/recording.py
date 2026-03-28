@@ -32,7 +32,7 @@ class Recording(Base):
     topic = Column(String(500), nullable=True)
     audio_path = Column(String(1000), nullable=False)
     duration_seconds = Column(Float, nullable=True)
-    status = Column(Enum(RecordingStatus), default=RecordingStatus.PENDING, nullable=False, index=True)
+    status = Column(Enum(RecordingStatus, values_callable=lambda x: [e.value for e in x]), default=RecordingStatus.PENDING, nullable=False, index=True)
 
     # Resultado de Deepgram STT
     raw_transcript = Column(Text, nullable=True)

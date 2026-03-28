@@ -14,15 +14,15 @@ import logging
 from pathlib import Path
 from typing import List, Tuple
 
-from deepgram import AsyncDeepgramClient, DeepgramApiError, DeepgramError, FileSource, PrerecordedOptions
+from deepgram import DeepgramClient, DeepgramApiError, DeepgramError, FileSource, PrerecordedOptions
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 
-def _build_client() -> AsyncDeepgramClient:
-    return AsyncDeepgramClient(api_key=settings.DEEPGRAM_API_KEY)
+def _build_client() -> DeepgramClient:
+    return DeepgramClient(api_key=settings.DEEPGRAM_API_KEY)
 
 
 def _format_diarized_transcript(response) -> str:
