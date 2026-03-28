@@ -46,14 +46,35 @@ def _process_audio_task(recording_id: int, keywords: List[str], db_url: str):
         db.commit()
 
         # TODO: implementar deepgram_service.transcribe(recording.audio_path, keywords)
-        # TODO: implementar gemini_service.generate_notes(transcript)
-        # Por ahora marcamos como completada con placeholder
+        # raw_transcript = deepgram_service.transcribe(recording.audio_path, keywords)
+        # recording.raw_transcript = raw_transcript
+        # recording.language_detected = ...
+        raw_transcript = recording.raw_transcript or ""
+
+        # Obtener contexto de la asignatura para Gemini
+        from app.models.subject import Subject, GlossaryTerm
+        subject_name = "General"
+        glossary_terms: list[str] = list(keywords)
+        if recording.subject_id:
+            subject = db.query(Subject).filter(Subject.id == recording.subject_id).first()
+            if subject:
+                subject_name = subject.name
+                db_terms = db.query(GlossaryTerm.term).filter(GlossaryTerm.subject_id == subject.id).all()
+                glossary_terms = list({t[0] for t in db_terms} | set(keywords))
+
+        from app.services.gemini_service import generate_notes
+        note_data = generate_notes(
+            raw_transcript=raw_transcript,
+            subject_name=subject_name,
+            glossary_terms=glossary_terms,
+        )
+
         from app.models.note import Note
         note = Note(
             recording_id=recording_id,
-            content_markdown="# Apuntes\n\n_Procesamiento pendiente de implementar._",
-            key_concepts=[],
-            review_questions=[],
+            content_markdown=note_data["content_markdown"],
+            key_concepts=note_data["key_concepts"],
+            review_questions=note_data["review_questions"],
         )
         db.add(note)
         recording.status = RecordingStatus.COMPLETED
