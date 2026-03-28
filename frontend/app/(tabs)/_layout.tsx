@@ -1,25 +1,25 @@
+import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import { Platform } from 'react-native';
-
-// Iconos inline como texto unicode para no añadir dependencias de iconos
-function TabIcon({ icon }: { icon: string }) {
-  return null; // Se puede reemplazar con @expo/vector-icons cuando se instale
-}
+import { useTheme } from '../../context/ThemeContext';
 
 export default function TabsLayout() {
+  const theme = useTheme();
+
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#6366f1',
-        tabBarInactiveTintColor: '#94a3b8',
+        tabBarActiveTintColor: theme.colors.primary,
+        tabBarInactiveTintColor: theme.colors.textTertiary,
         tabBarStyle: {
+          backgroundColor: theme.colors.tabBar,
+          borderTopColor: theme.colors.tabBarBorder,
           borderTopWidth: 1,
-          borderTopColor: '#e2e8f0',
           paddingBottom: Platform.OS === 'ios' ? 20 : 8,
           height: Platform.OS === 'ios' ? 80 : 60,
         },
-        headerStyle: { backgroundColor: '#6366f1' },
-        headerTintColor: '#fff',
+        headerStyle: { backgroundColor: theme.colors.header },
+        headerTintColor: theme.colors.headerText,
         headerTitleStyle: { fontWeight: '700' },
       }}
     >
@@ -28,6 +28,15 @@ export default function TabsLayout() {
         options={{
           title: 'Mis Apuntes',
           tabBarLabel: 'Inicio',
+          tabBarIcon: ({ color, size }) => <Ionicons name="mic" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="folders"
+        options={{
+          title: 'Carpetas',
+          tabBarLabel: 'Carpetas',
+          tabBarIcon: ({ color, size }) => <Ionicons name="folder" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
@@ -35,6 +44,7 @@ export default function TabsLayout() {
         options={{
           title: 'Perfil',
           tabBarLabel: 'Perfil',
+          tabBarIcon: ({ color, size }) => <Ionicons name="person" size={size} color={color} />,
         }}
       />
     </Tabs>

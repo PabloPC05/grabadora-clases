@@ -1,91 +1,110 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTheme } from '../../context/ThemeContext';
 import { recordingsApi, type Recording } from '../../services/api';
+import { getCachedRecordings, saveRecording } from '../../services/localDb';
 
 export default function RecordingDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [recording, setRecording] = useState<Recording | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [offline, setOffline] = useState(false);
   const router = useRouter();
+  const theme = useTheme();
 
   useEffect(() => {
     if (!id) return;
     recordingsApi.get(Number(id))
-      .then(({ data }) => setRecording(data))
-      .catch(() => setError('No se pudo cargar la transcripción.'))
+      .then(({ data }) => {
+        saveRecording(data);
+        setRecording(data);
+      })
+      .catch(() => {
+        const cached = getCachedRecordings().find((r) => r.id === Number(id));
+        if (cached) { setRecording(cached); setOffline(true); }
+      })
       .finally(() => setLoading(false));
   }, [id]);
 
   if (loading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#6366f1" />
+      <View style={[styles.center, { backgroundColor: theme.colors.background }]}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
       </View>
     );
   }
 
-  if (error || !recording) {
+  if (!recording) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.errorText}>{error ?? 'Grabación no encontrada.'}</Text>
-        <Pressable style={styles.button} onPress={() => router.replace('/(tabs)')}>
-          <Text style={styles.buttonText}>Volver al inicio</Text>
-        </Pressable>
-      </View>
+      <SafeAreaView style={[styles.safe, { backgroundColor: theme.colors.background }]}>
+        <View style={styles.center}>
+          <Text style={[styles.errorText, { color: theme.colors.error }]}>Grabación no encontrada.</Text>
+          <Pressable style={[styles.button, { backgroundColor: theme.colors.primary }]} onPress={() => router.replace('/(tabs)')}>
+            <Text style={styles.buttonText}>Volver al inicio</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {recording.topic && (
-        <Text style={styles.topic}>{recording.topic}</Text>
+    <SafeAreaView style={[styles.safe, { backgroundColor: theme.colors.background }]} edges={['bottom']}>
+      {offline && (
+        <View style={[styles.offlineBanner, { backgroundColor: theme.colors.warning }]}>
+          <Ionicons name="cloud-offline-outline" size={14} color="#fff" />
+          <Text style={styles.offlineText}>Mostrando datos guardados localmente</Text>
+        </View>
       )}
-
-      <Text style={styles.date}>
-        {new Date(recording.created_at).toLocaleDateString('es-ES', {
-          day: '2-digit', month: 'long', year: 'numeric',
-        })}
-      </Text>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Transcripción</Text>
-        {recording.raw_transcript ? (
-          <Text style={styles.transcript}>{recording.raw_transcript}</Text>
-        ) : (
-          <Text style={styles.empty}>No hay transcripción disponible.</Text>
+      <ScrollView contentContainerStyle={styles.content}>
+        {recording.topic && (
+          <Text style={[styles.topic, { color: theme.colors.text }]}>{recording.topic}</Text>
         )}
-      </View>
+        <Text style={[styles.date, { color: theme.colors.textTertiary }]}>
+          {new Date(recording.created_at).toLocaleDateString('es-ES', {
+            day: '2-digit', month: 'long', year: 'numeric',
+          })}
+        </Text>
 
-      <Pressable style={styles.button} onPress={() => router.replace('/(tabs)')}>
-        <Text style={styles.buttonText}>Volver al inicio</Text>
-      </Pressable>
-    </ScrollView>
+        <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.primary }]}>Transcripción</Text>
+          {recording.raw_transcript ? (
+            <Text style={[styles.transcript, { color: theme.colors.text }]}>
+              {recording.raw_transcript}
+            </Text>
+          ) : (
+            <Text style={[styles.empty, { color: theme.colors.textTertiary }]}>
+              No hay transcripción disponible.
+            </Text>
+          )}
+        </View>
+
+        <Pressable style={[styles.button, { backgroundColor: theme.colors.primary }]} onPress={() => router.replace('/(tabs)')}>
+          <Text style={styles.buttonText}>Volver al inicio</Text>
+        </Pressable>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f1f5f9' },
-  content: { padding: 20, paddingBottom: 48 },
+  safe: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
-  topic: { fontSize: 22, fontWeight: '700', color: '#1e293b', marginBottom: 4 },
-  date: { fontSize: 13, color: '#94a3b8', marginBottom: 20 },
+  offlineBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 8 },
+  offlineText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  content: { padding: 20, paddingBottom: 48 },
+  topic: { fontSize: 22, fontWeight: '700', marginBottom: 4 },
+  date: { fontSize: 13, marginBottom: 20 },
   section: {
-    backgroundColor: '#fff', borderRadius: 14, padding: 16,
-    marginBottom: 16, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
+    borderRadius: 14, padding: 16, marginBottom: 16,
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
   },
-  sectionTitle: { fontSize: 13, fontWeight: '700', color: '#6366f1', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 12 },
-  transcript: { fontSize: 15, color: '#334155', lineHeight: 26 },
-  empty: { fontSize: 14, color: '#94a3b8', fontStyle: 'italic' },
-  errorText: { fontSize: 16, color: '#ef4444', marginBottom: 16, textAlign: 'center' },
-  button: { backgroundColor: '#6366f1', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
+  sectionTitle: { fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 12 },
+  transcript: { fontSize: 15, lineHeight: 26 },
+  empty: { fontSize: 14, fontStyle: 'italic' },
+  errorText: { fontSize: 16, marginBottom: 16, textAlign: 'center' },
+  button: { borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
 });

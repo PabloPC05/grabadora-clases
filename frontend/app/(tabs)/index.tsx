@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
@@ -9,29 +10,37 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useTheme } from '../../context/ThemeContext';
 import { Recording, recordingsApi } from '../../services/api';
+import { getCachedRecordings, saveRecordings } from '../../services/localDb';
 
 export default function HomeScreen() {
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [offline, setOffline] = useState(false);
   const router = useRouter();
+  const theme = useTheme();
 
-  const fetchRecordings = async () => {
+  const fetchRecordings = async (silent = false) => {
     try {
       const { data } = await recordingsApi.list();
+      saveRecordings(data);
       setRecordings(data);
+      setOffline(false);
     } catch {
-      // silencioso — el interceptor manejará errores 401
+      const cached = getCachedRecordings();
+      if (cached.length > 0) {
+        setRecordings(cached);
+        setOffline(true);
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
       setRefreshing(false);
     }
   };
 
-  useEffect(() => {
-    fetchRecordings();
-  }, []);
+  useEffect(() => { fetchRecordings(); }, []);
 
   const STATUS_LABEL: Record<string, string> = {
     pending: 'Pendiente',
@@ -39,101 +48,111 @@ export default function HomeScreen() {
     completed: 'Listo',
     failed: 'Error',
   };
-  const STATUS_COLOR: Record<string, string> = {
-    pending: '#f59e0b',
-    processing: '#3b82f6',
-    completed: '#10b981',
-    failed: '#ef4444',
-  };
 
-  const renderItem = ({ item }: { item: Recording }) => (
-    <Pressable
-      style={styles.card}
-      onPress={() => {
-        if (item.status === 'completed') {
-          // La note tiene el mismo recording_id; navegar a notes con recording id
-          // En la siguiente fase se buscará el note_id real desde la API
-          router.push(`/notes/${item.id}`);
-        }
-      }}
-    >
-      <View style={styles.cardRow}>
-        <Text style={styles.topic} numberOfLines={1}>
-          {item.topic ?? 'Sin título'}
-        </Text>
-        <View style={[styles.badge, { backgroundColor: STATUS_COLOR[item.status] }]}>
-          <Text style={styles.badgeText}>{STATUS_LABEL[item.status]}</Text>
+  const renderItem = ({ item }: { item: Recording }) => {
+    const statusBg = theme.colors.statusBg[item.status] ?? theme.colors.border;
+    const statusText = theme.colors.statusText[item.status] ?? theme.colors.text;
+    return (
+      <Pressable
+        style={[styles.card, { backgroundColor: theme.colors.surface }]}
+        onPress={() => {
+          if (item.status === 'completed') {
+            router.push(`/recording/${item.id}`);
+          }
+        }}
+      >
+        <View style={styles.cardRow}>
+          <Text style={[styles.topic, { color: theme.colors.text }]} numberOfLines={1}>
+            {item.topic ?? 'Sin título'}
+          </Text>
+          <View style={[styles.badge, { backgroundColor: statusBg }]}>
+            <Text style={[styles.badgeText, { color: statusText }]}>{STATUS_LABEL[item.status]}</Text>
+          </View>
         </View>
-      </View>
-      <Text style={styles.date}>
-        {new Date(item.created_at).toLocaleDateString('es-ES', {
-          day: '2-digit', month: 'short', year: 'numeric',
-        })}
-      </Text>
-    </Pressable>
-  );
+        <Text style={[styles.date, { color: theme.colors.textTertiary }]}>
+          {new Date(item.created_at).toLocaleDateString('es-ES', {
+            day: '2-digit', month: 'short', year: 'numeric',
+          })}
+        </Text>
+      </Pressable>
+    );
+  };
 
   if (loading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#6366f1" />
+      <View style={[styles.center, { backgroundColor: theme.colors.background }]}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      {offline && (
+        <View style={[styles.offlineBanner, { backgroundColor: theme.colors.warning }]}>
+          <Ionicons name="cloud-offline-outline" size={14} color="#fff" />
+          <Text style={styles.offlineText}>Sin conexión — mostrando datos guardados</Text>
+        </View>
+      )}
+
       <FlatList
         data={recordings}
         keyExtractor={(r) => String(r.id)}
         renderItem={renderItem}
-        contentContainerStyle={recordings.length === 0 && styles.empty}
+        contentContainerStyle={recordings.length === 0 ? styles.empty : { paddingVertical: 8 }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => { setRefreshing(true); fetchRecordings(); }}
-            tintColor="#6366f1"
+            tintColor={theme.colors.primary}
           />
         }
         ListEmptyComponent={
           <View style={styles.center}>
-            <Text style={styles.emptyText}>Sin grabaciones aún.</Text>
-            <Text style={styles.emptyHint}>
+            <Ionicons name="mic-outline" size={48} color={theme.colors.textTertiary} style={{ marginBottom: 16 }} />
+            <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>Sin grabaciones aún.</Text>
+            <Text style={[styles.emptyHint, { color: theme.colors.textTertiary }]}>
               Pulsa el botón + para empezar tu primera clase.
             </Text>
           </View>
         }
       />
 
-      {/* FAB — nueva grabación */}
-      <Pressable style={styles.fab} onPress={() => router.push('/recording/new')}>
-        <Text style={styles.fabText}>+</Text>
+      <Pressable
+        style={[styles.fab, { backgroundColor: theme.colors.primary }]}
+        onPress={() => router.push('/recording/new')}
+      >
+        <Ionicons name="add" size={32} color="#fff" />
       </Pressable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f1f5f9' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  container: { flex: 1 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
   empty: { flex: 1 },
-  emptyText: { fontSize: 18, fontWeight: '600', color: '#475569', marginBottom: 8 },
-  emptyHint: { fontSize: 14, color: '#94a3b8', textAlign: 'center' },
+  emptyText: { fontSize: 18, fontWeight: '600', marginBottom: 8 },
+  emptyHint: { fontSize: 14, textAlign: 'center' },
+  offlineBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 16, paddingVertical: 8,
+  },
+  offlineText: { color: '#fff', fontSize: 12, fontWeight: '600' },
   card: {
-    backgroundColor: '#fff', marginHorizontal: 16, marginVertical: 6,
+    marginHorizontal: 16, marginVertical: 6,
     borderRadius: 12, padding: 16,
     shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
   },
   cardRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  topic: { fontSize: 16, fontWeight: '600', color: '#1e293b', flex: 1, marginRight: 8 },
+  topic: { fontSize: 16, fontWeight: '600', flex: 1, marginRight: 8 },
   badge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
-  badgeText: { color: '#fff', fontSize: 11, fontWeight: '600' },
-  date: { fontSize: 12, color: '#94a3b8', marginTop: 6 },
+  badgeText: { fontSize: 11, fontWeight: '600' },
+  date: { fontSize: 12, marginTop: 6 },
   fab: {
     position: 'absolute', bottom: 24, right: 24,
-    backgroundColor: '#6366f1', width: 56, height: 56, borderRadius: 28,
+    width: 56, height: 56, borderRadius: 28,
     justifyContent: 'center', alignItems: 'center',
     shadowColor: '#6366f1', shadowOpacity: 0.4, shadowRadius: 12, elevation: 6,
   },
-  fabText: { color: '#fff', fontSize: 28, lineHeight: 30 },
 });

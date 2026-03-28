@@ -97,6 +97,8 @@ export const subjectsApi = {
 
   create: (name: string, description?: string, glossary_terms: { term: string }[] = []) =>
     apiClient.post<Subject>('/subjects', { name, description, glossary_terms }),
+
+  delete: (id: number) => apiClient.delete(`/subjects/${id}`),
 };
 
 // ─────────────────────────────────────────────

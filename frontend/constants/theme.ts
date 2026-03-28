@@ -1,0 +1,73 @@
+export const lightTheme = {
+  dark: false,
+  colors: {
+    background: '#f1f5f9',
+    surface: '#ffffff',
+    surfaceSecondary: '#f8fafc',
+    primary: '#6366f1',
+    primaryLight: '#eef2ff',
+    text: '#1e293b',
+    textSecondary: '#64748b',
+    textTertiary: '#94a3b8',
+    border: '#e2e8f0',
+    inputBg: '#ffffff',
+    tabBar: '#ffffff',
+    tabBarBorder: '#e2e8f0',
+    header: '#6366f1',
+    headerText: '#ffffff',
+    success: '#10b981',
+    warning: '#f59e0b',
+    error: '#ef4444',
+    info: '#3b82f6',
+    statusBg: {
+      pending: '#fef3c7',
+      processing: '#dbeafe',
+      completed: '#d1fae5',
+      failed: '#fee2e2',
+    },
+    statusText: {
+      pending: '#92400e',
+      processing: '#1e40af',
+      completed: '#065f46',
+      failed: '#991b1b',
+    },
+  },
+};
+
+export const darkTheme = {
+  dark: true,
+  colors: {
+    background: '#0f172a',
+    surface: '#1e293b',
+    surfaceSecondary: '#162032',
+    primary: '#818cf8',
+    primaryLight: '#1e1b4b',
+    text: '#f1f5f9',
+    textSecondary: '#94a3b8',
+    textTertiary: '#475569',
+    border: '#334155',
+    inputBg: '#1e293b',
+    tabBar: '#1e293b',
+    tabBarBorder: '#334155',
+    header: '#1e293b',
+    headerText: '#f1f5f9',
+    success: '#10b981',
+    warning: '#f59e0b',
+    error: '#ef4444',
+    info: '#60a5fa',
+    statusBg: {
+      pending: '#451a03',
+      processing: '#1e3a5f',
+      completed: '#064e3b',
+      failed: '#450a0a',
+    },
+    statusText: {
+      pending: '#fcd34d',
+      processing: '#93c5fd',
+      completed: '#6ee7b7',
+      failed: '#fca5a5',
+    },
+  },
+};
+
+export type Theme = typeof lightTheme;

@@ -9,6 +9,7 @@
     "web": "expo start --web"
   },
   "dependencies": {
+    "@expo/vector-icons": "^15.1.1",
     "axios": "^1.7.2",
     "babel-preset-expo": "^55.0.14-canary-20260328-2049187",
     "expo": "^54.0.0",
@@ -19,6 +20,7 @@
     "expo-router": "~6.0.23",
     "expo-secure-store": "~15.0.8",
     "expo-splash-screen": "^55.0.14-canary-20260328-2049187",
+    "expo-sqlite": "^55.0.12-canary-20260328-2049187",
     "expo-status-bar": "~3.0.9",
     "react": "19.1.0",
     "react-dom": "19.1.0",
