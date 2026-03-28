@@ -20,11 +20,10 @@ ALLOWED_AUDIO_TYPES = {"audio/mpeg", "audio/ogg", "audio/opus", "audio/wav", "au
 def _process_audio_task(recording_id: int, keywords: List[str], db_url: str):
     """
     Tarea en segundo plano:
-      1. Transcribir con Deepgram (pasando keywords)
-      2. Post-procesar con Gemini
-      3. Persistir Note y actualizar Task a COMPLETED
-
-    Se implementará en app/services/ en la siguiente fase.
+      1. Transcribir con Deepgram nova-2 (inyectando keywords del glosario)
+      2. Persistir raw_transcript en Recording
+      3. Post-procesar con Gemini 1.5 Flash
+      4. Persistir Note y marcar Task como COMPLETED
     """
     # Importación diferida para no bloquear el arranque si las claves no están
     from sqlalchemy import create_engine
@@ -45,13 +44,7 @@ def _process_audio_task(recording_id: int, keywords: List[str], db_url: str):
         recording.status = RecordingStatus.PROCESSING
         db.commit()
 
-        # TODO: implementar deepgram_service.transcribe(recording.audio_path, keywords)
-        # raw_transcript = deepgram_service.transcribe(recording.audio_path, keywords)
-        # recording.raw_transcript = raw_transcript
-        # recording.language_detected = ...
-        raw_transcript = recording.raw_transcript or ""
-
-        # Obtener contexto de la asignatura para Gemini
+        # --- Contexto de asignatura (necesario tanto para Deepgram como para Gemini) ---
         from app.models.subject import Subject, GlossaryTerm
         subject_name = "General"
         glossary_terms: list[str] = list(keywords)
@@ -60,8 +53,17 @@ def _process_audio_task(recording_id: int, keywords: List[str], db_url: str):
             if subject:
                 subject_name = subject.name
                 db_terms = db.query(GlossaryTerm.term).filter(GlossaryTerm.subject_id == subject.id).all()
+                # Merge de términos de la DB con keywords del request (sin duplicados)
                 glossary_terms = list({t[0] for t in db_terms} | set(keywords))
 
+        # --- Paso 1: Transcripción con Deepgram ---
+        from app.services.deepgram_service import transcribe_audio
+        raw_transcript, language_detected = transcribe_audio(recording.audio_path, glossary_terms)
+        recording.raw_transcript = raw_transcript
+        recording.language_detected = language_detected
+        db.commit()  # persistir transcript antes de llamar a Gemini
+
+        # --- Paso 2: Post-procesado con Gemini ---
         from app.services.gemini_service import generate_notes
         note_data = generate_notes(
             raw_transcript=raw_transcript,
