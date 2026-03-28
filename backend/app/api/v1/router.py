@@ -1,0 +1,11 @@
+from fastapi import APIRouter
+
+from app.api.v1.endpoints import health, subjects, recordings, tasks, notes
+
+api_router = APIRouter()
+
+api_router.include_router(health.router)
+api_router.include_router(subjects.router)
+api_router.include_router(recordings.router)
+api_router.include_router(tasks.router)
+api_router.include_router(notes.router)

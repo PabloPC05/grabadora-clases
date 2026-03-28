@@ -1,99 +1,175 @@
-# 🎙 Grabadora de Clases con IA
+# Grabadora de Clases — App Móvil
 
-Aplicación de escritorio nativa **Windows** para grabar audio de clases, transcribir automáticamente con Whisper, detectar el idioma, traducir al español y generar un resumen estructurado con Claude IA.
+Aplicación móvil para estudiantes universitarios que graba clases, transcribe el audio con inyección de contexto técnico (glosarios), y usa un LLM para generar apuntes estructurados y preguntas de repaso.
 
-![CSharp](https://img.shields.io/badge/C%23-WPF-blue?logo=csharp)
-![Whisper](https://img.shields.io/badge/Whisper.net-local-green)
-![Claude](https://img.shields.io/badge/AI-Claude%20Sonnet-purple)
+---
 
-## ¿Qué hace?
+## Stack Tecnológico
 
-1. **Graba** audio desde el micrófono con un solo clic
-2. **Preprocesa** el audio (filtro paso-alto + normalización) para micrófonos lejanos
-3. **Transcribe** localmente con Whisper (sin Python, sin instalar nada extra)
-4. **Detecta el idioma** automáticamente (español, inglés, francés, alemán…)
-5. **Traduce al español** si la clase no es en español (usando Claude API)
-6. **Resume** con Claude API en formato estructurado con viñetas
-7. **Guarda** el resultado como `.md` junto al audio
+| Capa | Tecnología |
+|---|---|
+| Frontend | React Native + Expo |
+| Backend | Python + FastAPI |
+| Base de Datos | PostgreSQL + SQLAlchemy |
+| STT | Deepgram API (keywords/glosarios) |
+| LLM | Gemini 1.5 Flash (`google-generativeai`) |
+| Audio (móvil) | expo-av + compresión OPUS/MP3 mono 64kbps |
+| Cola de tareas | FastAPI BackgroundTasks (o Celery + Redis) |
 
-También puede procesar archivos de audio existentes (WAV, MP3, M4A, FLAC, OGG).
+---
 
-## Instalación
+## Arquitectura General
 
-### Opción rápida: descarga el ejecutable
-
-Descarga `GrabadoraClases.exe` desde [Releases](https://github.com/PabloPC05/grabadora-clases/releases) y ejecútalo directamente. **No requiere instalar nada** (ni Python, ni .NET, ni Visual C++).
-
-> La primera vez descarga el modelo Whisper (~170MB). Las siguientes, arranca al instante.
-
-### Compilar desde código fuente
-
-Requisitos: [.NET 8 SDK](https://dotnet.microsoft.com/download)
-
-```bash
-git clone https://github.com/PabloPC05/grabadora-clases.git
-cd grabadora-clases/GrabadoraClases
-dotnet publish -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o publish
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        FRONTEND (Expo)                          │
+│                                                                 │
+│  [Pantalla Grabación]  →  graba audio (expo-av)                 │
+│  [Pantalla Contexto]   →  asignatura, tema, glosario            │
+│  [Pantalla Apuntes]    →  polling/WebSocket → muestra .md       │
+└────────────────────────────┬────────────────────────────────────┘
+                             │ POST /api/v1/recordings/upload
+                             │ (audio comprimido + metadata)
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                        BACKEND (FastAPI)                        │
+│                                                                 │
+│  POST /upload  ──►  guarda audio  ──►  encola tarea             │
+│                      en disco           (BackgroundTask)        │
+│                         │                                       │
+│                  devuelve {task_id}                             │
+│                                                                 │
+│  Worker ──►  Deepgram STT (con keywords del glosario)           │
+│         ──►  Gemini 1.5 Flash (limpia, estructura, preguntas)   │
+│         ──►  guarda Apunte en PostgreSQL                        │
+│                                                                 │
+│  GET /tasks/{id}  ──►  {status, note_id?}   (polling)          │
+│  GET /notes/{id}  ──►  apunte completo en Markdown             │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      PostgreSQL                                 │
+│  users · subjects · glossary_terms · recordings · notes        │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-El ejecutable queda en `GrabadoraClases/publish/GrabadoraClases.exe`.
+---
 
-### API key de Anthropic
+## Flujo de Datos Detallado
 
-Necesaria para traducción y resumen. Consíguela en [console.anthropic.com](https://console.anthropic.com).
+```
+1. Usuario abre app
+   └─ selecciona/crea Asignatura + añade términos al Glosario
 
-Configúrala dentro de la app en **⚙ Configuración → API Key**.
+2. Pulsa [Grabar]
+   └─ expo-av graba audio crudo
+   └─ compresión en cliente → OPUS mono 64kbps
 
-> Sin API key la transcripción sigue funcionando, pero no habrá traducción ni resumen.
+3. Pulsa [Procesar]
+   └─ POST /api/v1/recordings/upload
+      body: { audio: <multipart>, subject_id, topic, keywords: ["FFT","Nyquist",...] }
+   └─ backend responde: { task_id: "uuid" }
 
-## Uso
+4. Backend (BackgroundTask)
+   a. Guarda .opus en storage local / S3
+   b. Llama Deepgram STT con keywords del glosario
+      → transcripción en bruto
+   c. Llama Gemini 1.5 Flash:
+      prompt_sistema: "Limpia errores, aplica Markdown, extrae conceptos clave,
+                       genera 3 preguntas de repaso"
+      → apunte estructurado en Markdown
+   d. Persiste Recording + Note en PostgreSQL
+   e. Actualiza estado de tarea → "completed"
 
-| Acción | Cómo |
-|--------|------|
-| Grabar una clase | Pulsa **⏺ Grabar**, cuando termines pulsa **⏹ Detener** |
-| Procesar un audio ya grabado | Pulsa **📂 Abrir Archivo** |
-| Ver el resumen | Pestaña **📋 Resumen** |
-| Ver la transcripción | Pestaña **📝 Transcripción** |
-| Ver el texto original (si se tradujo) | Pestaña **🌐 Original** |
-| Cambiar modelo Whisper | **⚙ Configuración → Modelo** |
-| Ajustar ganancia de micrófono | **⚙ Configuración → Ganancia** |
+5. Frontend hace polling cada 3s
+   GET /api/v1/tasks/{task_id}
+   └─ {status: "completed", note_id: 42}
+   └─ GET /api/v1/notes/42  →  renderiza Markdown
+```
 
-Los resultados se guardan como archivos `.md` en `Documentos/grabaciones/` (configurable).
+---
 
-## Modelos Whisper
-
-El modelo se descarga automáticamente la primera vez (de Hugging Face).
-
-| Modelo | Precisión | Tamaño | Nota |
-|--------|-----------|--------|------|
-| `tiny` | ★★☆☆☆ | ~75 MB | Tests rápidos |
-| `base` | ★★★☆☆ | ~150 MB | Buena velocidad |
-| `small` | ★★★★☆ | ~170 MB | **Recomendado** |
-| `medium` | ★★★★★ | ~500 MB | Máxima precisión |
-
-## Tecnologías
-
-- **GUI**: WPF / .NET 8 — interfaz nativa Windows con tema oscuro
-- **Audio**: [NAudio](https://github.com/naudio/NAudio) — captura y decodificación multiplataforma
-- **Transcripción**: [Whisper.net](https://github.com/sandrohanea/whisper.net) — bindings .NET para whisper.cpp (100% local, sin Python)
-- **Traducción y resumen**: [Anthropic Claude API](https://docs.anthropic.com) (claude-sonnet-4-6)
-- **Preprocesado de audio**: filtro paso-alto 80 Hz + normalización RMS configurable
-
-## Estructura
+## Estructura de Carpetas
 
 ```
 grabadora-clases/
-├── GrabadoraClases/         # App C# + WPF
-│   ├── MainWindow.xaml      # UI principal
-│   ├── MainWindow.xaml.cs   # Lógica: grabación, transcripción, Claude API
-│   ├── AppSettings.cs       # Persistencia de configuración
-│   ├── SettingsWindow.xaml  # Diálogo de ajustes
-│   └── GrabadoraClases.csproj
-├── grabadora.py             # Versión CLI Python (referencia)
-├── src/main.rs              # Versión Rust anterior (referencia)
-└── grabaciones/             # Salida: .wav + .md por sesión
+├── backend/
+│   ├── app/
+│   │   ├── api/v1/endpoints/   # routers FastAPI
+│   │   ├── core/               # config, seguridad, dependencias
+│   │   ├── db/                 # sesión SQLAlchemy, base declarativa
+│   │   ├── models/             # modelos ORM
+│   │   ├── schemas/            # Pydantic schemas (request/response)
+│   │   └── services/           # lógica: deepgram, gemini, audio
+│   ├── alembic/                # migraciones de base de datos
+│   ├── tests/
+│   ├── requirements.txt
+│   └── main.py
+└── frontend/
+    ├── src/
+    │   ├── screens/            # pantallas principales
+    │   ├── components/         # componentes reutilizables
+    │   ├── hooks/              # custom hooks (grabación, polling)
+    │   ├── services/           # llamadas a la API REST
+    │   ├── navigation/         # React Navigation
+    │   ├── store/              # estado global (Zustand / Context)
+    │   └── types/              # TypeScript types
+    ├── assets/
+    ├── app.json
+    └── package.json
 ```
 
-## Licencia
+---
 
-MIT
+## Variables de Entorno (backend/.env)
+
+```env
+DATABASE_URL=postgresql://user:pass@localhost:5432/grabadora
+DEEPGRAM_API_KEY=...
+GOOGLE_API_KEY=...
+SECRET_KEY=change_me_in_production
+AUDIO_STORAGE_PATH=./storage/audio
+```
+
+---
+
+## Esquema de Base de Datos
+
+```
+users
+  id, email, hashed_password, full_name, created_at
+
+subjects
+  id, user_id (FK), name, description, created_at
+
+glossary_terms
+  id, subject_id (FK), term, definition
+
+recordings
+  id, user_id (FK), subject_id (FK), topic, audio_path,
+  duration_seconds, status (pending|processing|completed|failed),
+  raw_transcript, language_detected, created_at
+
+notes
+  id, recording_id (FK 1:1), content_markdown, key_concepts (JSON),
+  review_questions (JSON), created_at, updated_at
+
+tasks
+  id (UUID), recording_id (FK), status, error_message, created_at, updated_at
+```
+
+---
+
+## Puesta en Marcha Rápida (Backend)
+
+```bash
+cd backend
+python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env          # editar con tus credenciales
+alembic upgrade head           # crear tablas
+uvicorn main:app --reload
+```
+
+API disponible en `http://localhost:8000` · Docs en `http://localhost:8000/docs`

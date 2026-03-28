@@ -1,0 +1,144 @@
+import os
+import uuid
+from typing import List
+
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
+from sqlalchemy.orm import Session
+
+from app.core.config import settings
+from app.db.base import get_db
+from app.models.recording import Recording, RecordingStatus
+from app.models.task import Task, TaskStatus
+from app.schemas.recording import RecordingOut, UploadResponse
+
+router = APIRouter(prefix="/recordings", tags=["recordings"])
+
+MOCK_USER_ID = 1
+ALLOWED_AUDIO_TYPES = {"audio/mpeg", "audio/ogg", "audio/opus", "audio/wav", "audio/mp4", "audio/x-m4a"}
+
+
+def _process_audio_task(recording_id: int, keywords: List[str], db_url: str):
+    """
+    Tarea en segundo plano:
+      1. Transcribir con Deepgram (pasando keywords)
+      2. Post-procesar con Gemini
+      3. Persistir Note y actualizar Task a COMPLETED
+
+    Se implementará en app/services/ en la siguiente fase.
+    """
+    # Importación diferida para no bloquear el arranque si las claves no están
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    engine = create_engine(db_url)
+    SessionBg = sessionmaker(bind=engine)
+    db = SessionBg()
+
+    try:
+        task = db.query(Task).filter(Task.recording_id == recording_id).first()
+        recording = db.query(Recording).filter(Recording.id == recording_id).first()
+
+        if not task or not recording:
+            return
+
+        task.status = TaskStatus.PROCESSING
+        recording.status = RecordingStatus.PROCESSING
+        db.commit()
+
+        # TODO: implementar deepgram_service.transcribe(recording.audio_path, keywords)
+        # TODO: implementar gemini_service.generate_notes(transcript)
+        # Por ahora marcamos como completada con placeholder
+        from app.models.note import Note
+        note = Note(
+            recording_id=recording_id,
+            content_markdown="# Apuntes\n\n_Procesamiento pendiente de implementar._",
+            key_concepts=[],
+            review_questions=[],
+        )
+        db.add(note)
+        recording.status = RecordingStatus.COMPLETED
+        task.status = TaskStatus.COMPLETED
+        db.commit()
+
+    except Exception as exc:
+        db.rollback()
+        task = db.query(Task).filter(Task.recording_id == recording_id).first()
+        recording = db.query(Recording).filter(Recording.id == recording_id).first()
+        if task:
+            task.status = TaskStatus.FAILED
+            task.error_message = str(exc)
+        if recording:
+            recording.status = RecordingStatus.FAILED
+        db.commit()
+    finally:
+        db.close()
+
+
+@router.post("/upload", response_model=UploadResponse, status_code=status.HTTP_202_ACCEPTED)
+async def upload_recording(
+    background_tasks: BackgroundTasks,
+    audio: UploadFile = File(...),
+    subject_id: int | None = Form(None),
+    topic: str | None = Form(None),
+    keywords: str = Form(""),  # CSV: "FFT,Nyquist,señal"
+    db: Session = Depends(get_db),
+):
+    """
+    Recibe un archivo de audio, lo guarda en disco, crea la Recording y la Task,
+    y encola el procesamiento asíncrono. Devuelve un task_id para polling.
+    """
+    if audio.content_type not in ALLOWED_AUDIO_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=f"Formato de audio no soportado: {audio.content_type}",
+        )
+
+    os.makedirs(settings.AUDIO_STORAGE_PATH, exist_ok=True)
+    file_ext = os.path.splitext(audio.filename or "audio.opus")[1] or ".opus"
+    filename = f"{uuid.uuid4()}{file_ext}"
+    audio_path = os.path.join(settings.AUDIO_STORAGE_PATH, filename)
+
+    content = await audio.read()
+    if len(content) > settings.MAX_AUDIO_SIZE_MB * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Archivo demasiado grande")
+
+    with open(audio_path, "wb") as f:
+        f.write(content)
+
+    recording = Recording(
+        user_id=MOCK_USER_ID,
+        subject_id=subject_id,
+        topic=topic,
+        audio_path=audio_path,
+        status=RecordingStatus.PENDING,
+    )
+    db.add(recording)
+    db.flush()
+
+    task = Task(recording_id=recording.id)
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+
+    keyword_list = [k.strip() for k in keywords.split(",") if k.strip()]
+    background_tasks.add_task(
+        _process_audio_task,
+        recording.id,
+        keyword_list,
+        settings.DATABASE_URL,
+    )
+
+    return UploadResponse(task_id=task.id, recording_id=recording.id)
+
+
+@router.get("/", response_model=List[RecordingOut])
+def list_recordings(db: Session = Depends(get_db)):
+    return db.query(Recording).filter(Recording.user_id == MOCK_USER_ID).order_by(Recording.created_at.desc()).all()
+
+
+@router.get("/{recording_id}", response_model=RecordingOut)
+def get_recording(recording_id: int, db: Session = Depends(get_db)):
+    recording = db.query(Recording).filter(Recording.id == recording_id, Recording.user_id == MOCK_USER_ID).first()
+    if not recording:
+        raise HTTPException(status_code=404, detail="Grabación no encontrada")
+    return recording
