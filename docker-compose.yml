@@ -1,0 +1,40 @@
+services:
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-grabadora}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-grabadora}
+      POSTGRES_DB: ${POSTGRES_DB:-grabadora}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"          # expuesto para conectar con TablePlus / psql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-grabadora}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      # Sobreescribe la URL para apuntar al servicio 'db' interno
+      DATABASE_URL: postgresql://${POSTGRES_USER:-grabadora}:${POSTGRES_PASSWORD:-grabadora}@db:5432/${POSTGRES_DB:-grabadora}
+    ports:
+      - "8000:8000"
+    volumes:
+      - audio_storage:/app/storage/audio
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  audio_storage:
