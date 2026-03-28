@@ -6,14 +6,15 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.deps import get_current_user
 from app.db.base import get_db
 from app.models.recording import Recording, RecordingStatus
 from app.models.task import Task, TaskStatus
+from app.models.user import User
 from app.schemas.recording import RecordingOut, UploadResponse
 
 router = APIRouter(prefix="/recordings", tags=["recordings"])
 
-MOCK_USER_ID = 1
 ALLOWED_AUDIO_TYPES = {"audio/mpeg", "audio/ogg", "audio/opus", "audio/wav", "audio/mp4", "audio/x-m4a"}
 
 
@@ -25,7 +26,6 @@ def _process_audio_task(recording_id: int, keywords: List[str], db_url: str):
       3. Post-procesar con Gemini 1.5 Flash
       4. Persistir Note y marcar Task como COMPLETED
     """
-    # Importación diferida para no bloquear el arranque si las claves no están
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
@@ -45,7 +45,7 @@ def _process_audio_task(recording_id: int, keywords: List[str], db_url: str):
         db.commit()
 
         # --- Contexto de asignatura (necesario tanto para Deepgram como para Gemini) ---
-        from app.models.subject import Subject, GlossaryTerm
+        from app.models.subject import GlossaryTerm, Subject
         subject_name = "General"
         glossary_terms: list[str] = list(keywords)
         if recording.subject_id:
@@ -53,7 +53,6 @@ def _process_audio_task(recording_id: int, keywords: List[str], db_url: str):
             if subject:
                 subject_name = subject.name
                 db_terms = db.query(GlossaryTerm.term).filter(GlossaryTerm.subject_id == subject.id).all()
-                # Merge de términos de la DB con keywords del request (sin duplicados)
                 glossary_terms = list({t[0] for t in db_terms} | set(keywords))
 
         # --- Paso 1: Transcripción con Deepgram ---
@@ -61,7 +60,7 @@ def _process_audio_task(recording_id: int, keywords: List[str], db_url: str):
         raw_transcript, language_detected = transcribe_audio(recording.audio_path, glossary_terms)
         recording.raw_transcript = raw_transcript
         recording.language_detected = language_detected
-        db.commit()  # persistir transcript antes de llamar a Gemini
+        db.commit()
 
         # --- Paso 2: Post-procesado con Gemini ---
         from app.services.gemini_service import generate_notes
@@ -103,8 +102,9 @@ async def upload_recording(
     audio: UploadFile = File(...),
     subject_id: int | None = Form(None),
     topic: str | None = Form(None),
-    keywords: str = Form(""),  # CSV: "FFT,Nyquist,señal"
+    keywords: str = Form(""),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Recibe un archivo de audio, lo guarda en disco, crea la Recording y la Task,
@@ -115,6 +115,16 @@ async def upload_recording(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail=f"Formato de audio no soportado: {audio.content_type}",
         )
+
+    # Verificar que el subject_id pertenece al usuario actual
+    if subject_id is not None:
+        from app.models.subject import Subject
+        subject = db.query(Subject).filter(
+            Subject.id == subject_id,
+            Subject.user_id == current_user.id,
+        ).first()
+        if not subject:
+            raise HTTPException(status_code=404, detail="Asignatura no encontrada")
 
     os.makedirs(settings.AUDIO_STORAGE_PATH, exist_ok=True)
     file_ext = os.path.splitext(audio.filename or "audio.opus")[1] or ".opus"
@@ -129,7 +139,7 @@ async def upload_recording(
         f.write(content)
 
     recording = Recording(
-        user_id=MOCK_USER_ID,
+        user_id=current_user.id,
         subject_id=subject_id,
         topic=topic,
         audio_path=audio_path,
@@ -155,13 +165,29 @@ async def upload_recording(
 
 
 @router.get("/", response_model=List[RecordingOut])
-def list_recordings(db: Session = Depends(get_db)):
-    return db.query(Recording).filter(Recording.user_id == MOCK_USER_ID).order_by(Recording.created_at.desc()).all()
+def list_recordings(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return (
+        db.query(Recording)
+        .filter(Recording.user_id == current_user.id)
+        .order_by(Recording.created_at.desc())
+        .all()
+    )
 
 
 @router.get("/{recording_id}", response_model=RecordingOut)
-def get_recording(recording_id: int, db: Session = Depends(get_db)):
-    recording = db.query(Recording).filter(Recording.id == recording_id, Recording.user_id == MOCK_USER_ID).first()
+def get_recording(
+    recording_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    recording = (
+        db.query(Recording)
+        .filter(Recording.id == recording_id, Recording.user_id == current_user.id)
+        .first()
+    )
     if not recording:
         raise HTTPException(status_code=404, detail="Grabación no encontrada")
     return recording
